@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+    <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+      <title>Babylon.js Mirrors</title>
+
+      <style>
+        html, body {
+          overflow: hidden;
+          width: 100%;
+          height: 100%;
+          margin: 0;
+          padding: 0;
+        }
+
+        #renderCanvas {
+          width: 100%;
+          height: 100%;
+          touch-action: none;
+        }
+      </style>
+
+      <script src="https://preview.babylonjs.com/babylon.js"></script>
+      <script src="https://preview.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+      <script src="https://code.jquery.com/pep/0.4.3/pep.js"></script>
+    </head>
+
+   <body>
+
+    <canvas id="renderCanvas" touch-action="none"></canvas> //touch-action="none" for best results from PEP
+
+    <script>
+      var canvas = document.getElementById("renderCanvas"); // Get the canvas element 
+      var engine = new BABYLON.Engine(canvas, true); // Generate the BABYLON 3D engine
+      var wallSize = 10;
+
+        // Creates color vector
+        var createPrettyColor = function() {
+          var min = 0.5;
+          return new BABYLON.Vector3( 
+            Math.max(min, Math.random()), 
+            Math.max(min, Math.random()), 
+            Math.max(min, Math.random())
+          );
+        }
+
+        /******* Add the create scene function ******/
+        var createScene = function () {
+          // Create the scene space
+          var scene = new BABYLON.Scene(engine);
+
+          // Add a camera to the scene and attach it to the canvas
+          var camera = new BABYLON.ArcRotateCamera("Camera", -Math.PI / 1.333, Math.PI / 2, wallSize*2, new BABYLON.Vector3(0,0,0), scene);
+          camera.attachControl(canvas, true);
+
+          // Add lights to the scene
+          var light1 = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(1, 1, 0), scene);
+          var light2 = new BABYLON.PointLight("light2", new BABYLON.Vector3(0, 1, -1), scene);
+
+          var mirrorTexture1 = new BABYLON.MirrorTexture("mirror", 1024, scene, true);
+          // mirrorTexture1.onClearObservable.add(() => {});
+          var mirrorTexture2 = new BABYLON.MirrorTexture("mirror", 1024, scene, true);
+          // mirrorTexture2.onClearObservable.add(() => {});
+
+          // Add and manipulate meshes in the scene
+          var sphere = BABYLON.MeshBuilder.CreateSphere("sphere", {diameter:2}, scene);
+          mirrorTexture1.renderList.push(sphere);
+          mirrorTexture2.renderList.push(sphere);
+
+          // Create walls
+          for (let index = 0; index < 4; index++) {   
+
+            var wallMaterial = new BABYLON.PBRMaterial(`wallMaterial`+index, scene);
+            wallMaterial.albedoColor = index < 2 ? new BABYLON.Vector3(1,1,1) : createPrettyColor();            
+            wallMaterial.roughness = index < 2 ? 0 : 0.5;
+            wallMaterial.metallic = index < 2 ? 1 : 0;
+
+            var wall = BABYLON.Mesh.CreatePlane(`wall`+index, wallSize, scene);
+            wall.rotate(new BABYLON.Vector3(0,1,0), index * Math.PI / 2)    
+            wall.translate(new BABYLON.Vector3(0,0,1), wallSize / 2);
+            wall.createNormals(true);
+            wall.material = wallMaterial;
+
+            // Create 2 mirror 
+            if (index < 2) {
+              //Ensure working with new values for glass by computing and obtaining its worldMatrix
+              wall.computeWorldMatrix(true);
+              var glassWorldMatrix = wall.getWorldMatrix();      
+              //Obtain normals for plane and assign one of them as the normal
+              var glassVertexData = wall.getVerticesData("normal");
+              var glassNormal = new BABYLON.Vector3(glassVertexData[0], glassVertexData[1], glassVertexData[2]);	
+              //Use worldMatrix to transform normal into its current value
+              glassNormal = new BABYLON.Vector3.TransformNormal(glassNormal, glassWorldMatrix);
+              // Create reflecting surface for mirror surface
+              var reflector = new BABYLON.Plane.FromPositionAndNormal(wall.position, glassNormal.scale(-1));
+              wallMaterial.disableLighting = true;
+
+              // Second mirror
+              if (index) {
+                wallMaterial.reflectionTexture = mirrorTexture2;
+                mirrorTexture1.renderList.push(wall);
+              // First mirror
+              } else {
+                wallMaterial.reflectionTexture = mirrorTexture1;
+                mirrorTexture2.renderList.push(wall);
+              }
+              wallMaterial.reflectionTexture.mirrorPlane = reflector;
+            } else {
+              mirrorTexture1.renderList.push(wall);
+              mirrorTexture2.renderList.push(wall);
+            }
+          }
+
+          // Create floor material
+          var floorMaterial = new BABYLON.PBRMaterial(`floorMaterial`, scene);
+          floorMaterial.albedoColor = createPrettyColor()
+          floorMaterial.roughness = 0.5;
+          floorMaterial.metallic = 0.5;
+
+          // Create floor 
+          var floor = BABYLON.Mesh.CreatePlane('floor', wallSize, scene);
+          floor.rotate(new BABYLON.Vector3(1,0,0), Math.PI / 2)    
+          floor.translate(new BABYLON.Vector3(0,0,1), wallSize/2);
+          floor.material = floorMaterial;
+          mirrorTexture1.renderList.push(floor);
+          mirrorTexture2.renderList.push(floor);
+
+          // Crete ceiling material
+          var ceilingMaterial = new BABYLON.PBRMaterial(`ceilingMaterial`, scene);
+          ceilingMaterial.emissiveColor = createPrettyColor()
+          ceilingMaterial.roughness = 1;
+          ceilingMaterial.metallic = 0;
+
+          // Crete ceiling
+          var ceiling = BABYLON.Mesh.CreatePlane('ceiling', wallSize, scene);
+          ceiling.rotate(new BABYLON.Vector3(1,0,0), -Math.PI / 2)    
+          ceiling.translate(new BABYLON.Vector3(0,0,1), wallSize/2);
+          ceiling.material = ceilingMaterial;
+          mirrorTexture1.renderList.push(ceiling);
+          mirrorTexture2.renderList.push(ceiling);
+
+          return scene;
+        };        
+        /******* End of the create scene function ******/    
+
+        var scene = createScene(); //Call the createScene function
+
+        // Register a render loop to repeatedly render the scene
+        engine.runRenderLoop(function () { 
+          scene.render();
+        });
+
+        // Watch for browser/canvas resize events
+        window.addEventListener("resize", function () { 
+          engine.resize();
+        });
+    </script>
+
+   </body>
+
+</html>
